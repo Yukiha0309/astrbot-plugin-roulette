@@ -53,36 +53,44 @@ def strip_command(text: str, command_names: list[str]) -> str:
 
 
 def extract_target_id(event: AstrMessageEvent, fallback_text: str = "") -> str | None:
+    self_id = str(event.get_self_id())
     for component in getattr(event.message_obj, "message", []):
-        if isinstance(component, Comp.At):
+        if isinstance(component, Comp.At) and str(component.qq) != self_id:
             return str(component.qq)
 
     text = fallback_text or str(getattr(event, "message_str", "") or "")
     for marker in ("qq=", "@"):
-        if marker in text:
-            after = text.split(marker, 1)[1]
+        rest = text
+        while marker in rest:
+            after = rest.split(marker, 1)[1]
             digits = ""
             for ch in after:
                 if ch.isdigit():
                     digits += ch
                 elif digits:
                     break
-            if digits:
+            if digits and digits != self_id:
                 return digits
+            rest = after
     return None
 
 
-class DevilRoulettePlugin(Star):
+class RoulettePlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
         super().__init__(context)
         self.config = config or {}
-        self.data_dir = os.path.join(get_astrbot_plugin_data_path(), "devil_roulette")
+        self.data_dir = os.path.join(get_astrbot_plugin_data_path(), "roulette_game")
         self.rooms_file = os.path.join(self.data_dir, "rooms.json")
+        self.death_stats_file = os.path.join(self.data_dir, "death_stats.json")
         self.rooms: dict[str, dict] = load_json(self.rooms_file, {})
+        self.death_stats: dict[str, dict] = load_json(self.death_stats_file, {})
         logger.info(f"简单的轮盘赌插件已加载，数据目录: {self.data_dir}")
 
     def _save(self) -> None:
         save_json(self.rooms_file, self.rooms)
+
+    def _save_death_stats(self) -> None:
+        save_json(self.death_stats_file, self.death_stats)
 
     def _is_group_allowed(self, group_id: str) -> bool:
         whitelist = normalize_ids(self.config.get("whitelist_groups", []))
@@ -155,6 +163,17 @@ class DevilRoulettePlugin(Star):
         player = room["player_map"].get(str(user_id))
         return player.get("name", f"玩家{user_id}") if player else f"玩家{user_id}"
 
+    def _turn_line(self, room: dict, user_id: str) -> str:
+        return f"轮到 [CQ:at,qq={user_id}] {self._player_name(room, user_id)} 行动。"
+
+    def _record_death(self, group_id: str, player: dict) -> None:
+        group_stats = self.death_stats.setdefault(str(group_id), {})
+        user_id = str(player["id"])
+        record = group_stats.setdefault(user_id, {"name": player["name"], "count": 0})
+        record["name"] = player["name"]
+        record["count"] = int(record.get("count", 0)) + 1
+        self._save_death_stats()
+
     def _current_id(self, room: dict) -> str | None:
         alive = self._alive_ids(room)
         if not alive:
@@ -226,9 +245,9 @@ class DevilRoulettePlugin(Star):
 
     def _remaining_bullets_text(self, room: dict) -> str:
         chamber = room.get("chamber", [])
-        live = sum(1 for b in chamber if b)
-        blank = len(chamber) - live
-        return f"剩余 {len(chamber)} 发：实弹 {live} 发，空弹 {blank} 发"
+        if not chamber:
+            return "剩余 x 发：实弹 x 发，空弹 x 发"
+        return "剩余 x 发：实弹 x 发，空弹 x 发"
 
     def _advance_turn(self, room: dict) -> list[str]:
         lines = []
@@ -250,7 +269,7 @@ class DevilRoulettePlugin(Star):
                 lines.append(f"{player['name']} 被跳过本回合，无法行动。")
                 continue
             room["turn_index"] = idx
-            lines.append(f"轮到 {player['name']} 行动。")
+            lines.append(self._turn_line(room, pid))
             return lines
         return lines
 
@@ -273,7 +292,7 @@ class DevilRoulettePlugin(Star):
         current_id = self._current_id(room)
         user_id = str(event.get_sender_id())
         if current_id != user_id:
-            return f"现在轮到 {self._player_name(room, current_id)} 行动。"
+            return self._turn_line(room, current_id)
         return None
 
     def _consume_item(self, player: dict, item: str) -> bool:
@@ -298,9 +317,8 @@ class DevilRoulettePlugin(Star):
             state = "存活" if player.get("alive") else "出局"
             skip = "，跳过待触发" if player.get("skipped") else ""
             bonus = "，短刀已准备" if player.get("damage_bonus") else ""
-            items = "、".join(player.get("items", [])) or "无"
             lines.append(
-                f"- {player['name']}：{player['hp']}/{player['max_hp']} 血，{state}{skip}{bonus}，道具：{items}"
+                f"- {player['name']}：{player['hp']}/{player['max_hp']} 血，{state}{skip}{bonus}"
             )
         return "\n".join(lines)
 
@@ -398,7 +416,7 @@ class DevilRoulettePlugin(Star):
             yield event.plain_result("至少需要 2 名玩家才能开始。")
             return
         if count > 6:
-            yield event.plain_result("v0.1 最多支持 6 名玩家。")
+            yield event.plain_result("v0.2 最多支持 6 名玩家。")
             return
 
         profile = self._player_profile(count)
@@ -421,7 +439,7 @@ class DevilRoulettePlugin(Star):
             "行动顺序：" + " -> ".join(self._player_name(room, pid) for pid in room["players"]),
         ]
         lines.extend(self._reload_chamber(room))
-        lines.append(f"首先行动：{self._player_name(room, self._current_id(room))}")
+        lines.append(self._turn_line(room, self._current_id(room)))
         self._save()
         yield event.plain_result("\n".join(lines))
 
@@ -486,7 +504,10 @@ class DevilRoulettePlugin(Star):
                 target["alive"] = False
                 target["skipped"] = False
                 target["damage_bonus"] = 0
+                self._record_death(group_id, target)
                 lines.append(f"{target['name']} 出局。")
+            else:
+                lines.append(f"{target['name']} 剩余生命：{target['hp']}/{target['max_hp']}。")
         else:
             lines.append(f"{shooter['name']} 对 {target['name']} 开枪：空弹。")
 
@@ -507,8 +528,8 @@ class DevilRoulettePlugin(Star):
         self._save()
         yield event.plain_result("\n".join(lines))
 
-    @filter.command("使用道具", alias={"用道具", "使用", "dritem"})
-    async def use_item(self, event: AstrMessageEvent):
+    @filter.command("梭哈", alias={"轮盘梭哈", "drallin"})
+    async def all_in(self, event: AstrMessageEvent):
         group_id, error = self._group_id_or_reply(event)
         if error:
             yield event.plain_result(error)
@@ -525,12 +546,133 @@ class DevilRoulettePlugin(Star):
             yield event.plain_result(turn_error)
             return
 
-        args = strip_command(event.message_str, ["使用道具", "用道具", "使用", "dritem"])
-        item = None
-        for candidate in ITEMS:
-            if candidate in args:
-                item = candidate
-                break
+        user_id = str(event.get_sender_id())
+        shooter = room["player_map"][user_id]
+        lines = [f"{shooter['name']} 选择梭哈，对自己连续开枪。"]
+        if not room.get("chamber"):
+            lines.extend(self._reload_chamber(room))
+
+        first_shot_bonus = int(shooter.get("damage_bonus", 0))
+        shooter["damage_bonus"] = 0
+        blanks = 0
+        shot_index = 0
+        hit_live = False
+
+        while room.get("chamber") and shooter.get("alive"):
+            bullet = room["chamber"].pop(0)
+            shot_index += 1
+            if not bullet:
+                blanks += 1
+                continue
+
+            hit_live = True
+            damage = 1 + (first_shot_bonus if shot_index == 1 else 0)
+            shooter["hp"] -= damage
+            if blanks:
+                lines.append(f"连续打出 {blanks} 发空弹。")
+            lines.append(f"随后打出实弹，{shooter['name']} 受到 {damage} 点伤害。")
+            if shooter["hp"] <= 0:
+                shooter["hp"] = 0
+                shooter["alive"] = False
+                shooter["skipped"] = False
+                self._record_death(group_id, shooter)
+                lines.append(f"{shooter['name']} 出局。")
+            else:
+                lines.append(f"{shooter['name']} 剩余生命：{shooter['hp']}/{shooter['max_hp']}。")
+            break
+
+        if not hit_live and blanks:
+            lines.append(f"连续打出 {blanks} 发空弹，弹仓已清空。")
+
+        finish_lines = self._finish_if_needed(group_id, room)
+        if finish_lines:
+            lines.extend(finish_lines)
+            yield event.plain_result("\n".join(lines))
+            return
+
+        if not room.get("chamber"):
+            lines.extend(self._reload_chamber(room))
+
+        if hit_live:
+            lines.extend(self._advance_turn(room))
+        else:
+            lines.append(f"{shooter['name']} 梭哈未中实弹，继续行动。")
+
+        self._save()
+        yield event.plain_result("\n".join(lines))
+
+    @filter.command("使用道具", alias={"用道具", "使用", "dritem"})
+    async def use_item(self, event: AstrMessageEvent):
+        async for result in self._use_item(event):
+            yield result
+
+    @filter.command("使用放大镜", alias={"用放大镜"})
+    async def use_magnifier(self, event: AstrMessageEvent):
+        async for result in self._use_item(event, "放大镜"):
+            yield result
+
+    @filter.command("使用香烟", alias={"用香烟"})
+    async def use_cigarette(self, event: AstrMessageEvent):
+        async for result in self._use_item(event, "香烟"):
+            yield result
+
+    @filter.command("使用啤酒", alias={"用啤酒"})
+    async def use_beer(self, event: AstrMessageEvent):
+        async for result in self._use_item(event, "啤酒"):
+            yield result
+
+    @filter.command("使用手铐", alias={"用手铐"})
+    async def use_handcuffs(self, event: AstrMessageEvent):
+        async for result in self._use_item(event, "手铐"):
+            yield result
+
+    @filter.command("使用短刀", alias={"用短刀"})
+    async def use_knife(self, event: AstrMessageEvent):
+        async for result in self._use_item(event, "短刀"):
+            yield result
+
+    async def _use_item(self, event: AstrMessageEvent, forced_item: str | None = None):
+        group_id, error = self._group_id_or_reply(event)
+        if error:
+            yield event.plain_result(error)
+            return
+        if not group_id:
+            return
+
+        room = self.rooms.get(group_id)
+        if not room:
+            yield event.plain_result("本群没有进行中的房间。")
+            return
+        turn_error = self._ensure_playing_turn(event, room)
+        if turn_error:
+            yield event.plain_result(turn_error)
+            return
+
+        args = strip_command(
+            event.message_str,
+            [
+                "使用道具",
+                "用道具",
+                "使用",
+                "dritem",
+                "使用放大镜",
+                "用放大镜",
+                "使用香烟",
+                "用香烟",
+                "使用啤酒",
+                "用啤酒",
+                "使用手铐",
+                "用手铐",
+                "使用短刀",
+                "用短刀",
+            ],
+        )
+        item = forced_item
+        if not item:
+            for candidate in ITEMS:
+                if candidate in args:
+                    item = candidate
+                    break
         if not item:
             yield event.plain_result("请指定道具：放大镜、香烟、啤酒、手铐、短刀。")
             return
@@ -617,6 +759,48 @@ class DevilRoulettePlugin(Star):
             return
         yield event.plain_result(self._status_text(room))
 
+    @filter.command("查看道具", alias={"我的道具", "轮盘道具", "dritems"})
+    async def show_items(self, event: AstrMessageEvent):
+        group_id, error = self._group_id_or_reply(event)
+        if error:
+            yield event.plain_result(error)
+            return
+        if not group_id:
+            return
+        room = self.rooms.get(group_id)
+        if not room:
+            yield event.plain_result("本群没有轮盘赌房间。")
+            return
+        user_id = str(event.get_sender_id())
+        player = room["player_map"].get(user_id)
+        if not player:
+            yield event.plain_result("你不在本局游戏中。")
+            return
+        items = "、".join(player.get("items", [])) or "无"
+        yield event.plain_result(f"{player['name']} 当前道具：{items}")
+
+    @filter.command("死亡榜", alias={"轮盘死亡榜", "drdeath"})
+    async def death_ranking(self, event: AstrMessageEvent):
+        group_id, error = self._group_id_or_reply(event)
+        if error:
+            yield event.plain_result(error)
+            return
+        if not group_id:
+            return
+        group_stats = self.death_stats.get(group_id, {})
+        if not group_stats:
+            yield event.plain_result("本群还没有死亡记录。")
+            return
+        ranking = sorted(
+            group_stats.values(),
+            key=lambda item: int(item.get("count", 0)),
+            reverse=True,
+        )[:10]
+        lines = ["轮盘死亡榜："]
+        for index, item in enumerate(ranking, 1):
+            lines.append(f"{index}. {item.get('name', '未知玩家')}：{int(item.get('count', 0))} 次")
+        yield event.plain_result("\n".join(lines))
+
     @filter.command("轮盘处决", alias={"轮盘淘汰", "处决", "drexecute"})
     async def execute_player(self, event: AstrMessageEvent):
         group_id, error = self._group_id_or_reply(event)
@@ -647,6 +831,7 @@ class DevilRoulettePlugin(Star):
         target["alive"] = False
         target["skipped"] = False
         target["damage_bonus"] = 0
+        self._record_death(group_id, target)
         lines = [f"{target['name']} 被判定为挂机，已被处决。"]
 
         finish_lines = self._finish_if_needed(group_id, room)
@@ -659,7 +844,7 @@ class DevilRoulettePlugin(Star):
         if current == target_id:
             lines.extend(self._advance_turn(room))
         else:
-            lines.append(f"当前行动：{self._player_name(room, self._current_id(room))}")
+            lines.append(self._turn_line(room, self._current_id(room)))
         self._save()
         yield event.plain_result("\n".join(lines))
 
@@ -686,15 +871,19 @@ class DevilRoulettePlugin(Star):
     @filter.command("轮盘帮助", alias={"轮盘帮助", "drhelp"})
     async def help(self, event: AstrMessageEvent):
         text = (
-            "简单的轮盘赌 v0.1\n"
+            "简单的轮盘赌 v0.2\n"
             "指令：\n"
             "/轮盘创建 - 创建房间\n"
             "/轮盘加入 - 加入房间\n"
             "/轮盘开始 - 开始游戏\n"
             "/开自己 - 对自己开枪\n"
             "/开 @玩家 - 对指定玩家开枪\n"
+            "/梭哈 - 对自己连续开枪直到实弹或弹仓清空\n"
             "/使用道具 道具名 - 使用道具\n"
+            "/使用手铐 @玩家、/使用啤酒 - 道具短指令\n"
+            "/查看道具 - 查看自己的道具\n"
             "/轮盘状态 - 查看状态\n"
+            "/死亡榜 - 查看本群死亡排行\n"
             "/轮盘处决 @玩家 - 房主/超级管理员处决挂机玩家\n"
             "/轮盘结束 - 房主/超级管理员结束房间\n\n"
             "道具：放大镜、香烟、啤酒、手铐、短刀。\n"
