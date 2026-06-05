@@ -44,4 +44,5 @@
 
 ```bash
 git clone https://github.com/Yukiha0309/astrbot-plugin-roulette.git
+```
 然后重启 AstrBot，或在 AstrBot 插件管理页面重新加载插件。
