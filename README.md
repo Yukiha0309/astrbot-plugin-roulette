@@ -46,3 +46,9 @@
 git clone https://github.com/Yukiha0309/astrbot-plugin-roulette.git
 ```
 然后重启 AstrBot，或在 AstrBot 插件管理页面重新加载插件。
+
+
+
+## AI 声明与使用许可
+本仓库代码主要由 AI 辅助生成，并由仓库维护者整理、测试与发布。
+你可以自由学习、使用、修改、二次开发和分发本插件。具体授权以本仓库的 LICENSE 文件为准。
