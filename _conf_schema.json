@@ -20,11 +20,28 @@
   "max_players": {
     "type": "int",
     "description": "最大玩家数",
-    "hint": "v0.1 规则设计上限为 6 人，不建议调高。",
+    "hint": "v0.2.5 规则设计上限为 6 人，不建议调高。",
     "default": 6,
     "slider": {
       "min": 2,
       "max": 6,
+      "step": 1
+    }
+  },
+  "use_player_codes": {
+    "type": "bool",
+    "description": "使用玩家代号",
+    "hint": "开启后对局内玩家显示为 P1、P2 等，开局会公布代号对应关系。",
+    "default": true
+  },
+  "player_name_max_length": {
+    "type": "int",
+    "description": "玩家名最大显示长度",
+    "hint": "关闭玩家代号或展示代号映射时使用，过长会自动截断。",
+    "default": 8,
+    "slider": {
+      "min": 4,
+      "max": 20,
       "step": 1
     }
   }
