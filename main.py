@@ -185,6 +185,47 @@ class RoulettePlugin(Star):
             "early_max_bullets": 10,
         }
 
+    def _isekai_player_profile(self, count: int) -> dict:
+        if count == 2:
+            return {
+                "hp": 5,
+                "item_start_round": 3,
+                "item_count_min": 2,
+                "item_count_max": 4,
+                "max_items": 8,
+                "early_rounds": 3,
+                "early_max_bullets": 4,
+            }
+        if count <= 4:
+            return {
+                "hp": 4,
+                "item_start_round": 2,
+                "item_count_min": 2,
+                "item_count_max": 3,
+                "max_items": 6,
+                "early_rounds": 2,
+                "early_max_bullets": 5,
+            }
+        if count <= 6:
+            return {
+                "hp": 3,
+                "item_start_round": 1,
+                "item_count_min": 1,
+                "item_count_max": 2,
+                "max_items": 4,
+                "early_rounds": 2,
+                "early_max_bullets": 7,
+            }
+        return {
+            "hp": 2,
+            "item_start_round": 1,
+            "item_count_min": 1,
+            "item_count_max": 1,
+            "max_items": 3,
+            "early_rounds": 0,
+            "early_max_bullets": 10,
+        }
+
     def _new_player(self, event: AstrMessageEvent) -> dict:
         user_id = str(event.get_sender_id())
         name = event.get_sender_name() or f"玩家{user_id}"
@@ -387,7 +428,6 @@ class RoulettePlugin(Star):
         lines = [
             f"第 {room['round_no']} 个弹仓轮开始。",
             f"本轮装填 {total} 发：实弹 {live_count} 发，空弹 {total - live_count} 发。",
-            "顺序未知。",
         ]
 
         if room["round_no"] >= profile["item_start_round"]:
@@ -404,7 +444,11 @@ class RoulettePlugin(Star):
         for pid in self._alive_ids(room):
             player = room["player_map"][pid]
             gained = []
-            for _ in range(profile["item_count"]):
+            item_count = random.randint(
+                int(profile.get("item_count_min", profile.get("item_count", 1))),
+                int(profile.get("item_count_max", profile.get("item_count", 1))),
+            )
+            for _ in range(item_count):
                 if len(player["items"]) >= profile["max_items"]:
                     break
                 item = self._draw_item(room)
@@ -609,6 +653,48 @@ class RoulettePlugin(Star):
             f"{player['name']} 加入了房间。\n当前人数：{len(room['players'])}/{max_players}"
         )
 
+    @filter.command("退出房间", alias={"轮盘退出", "退出轮盘", "drleave"})
+    async def leave_room(self, event: AstrMessageEvent):
+        group_id, error = self._group_id_or_reply(event)
+        if error:
+            yield event.plain_result(error)
+            return
+        if not group_id:
+            return
+
+        room = self.rooms.get(group_id)
+        if not room:
+            yield event.plain_result("本群没有轮盘赌房间。")
+            return
+        if room.get("status") != "waiting":
+            yield event.plain_result("游戏已经开始，不能退出房间。")
+            return
+
+        user_id = str(event.get_sender_id())
+        if user_id not in room["player_map"]:
+            yield event.plain_result("你不在当前房间里。")
+            return
+
+        name = room["player_map"][user_id].get("name", f"玩家{user_id}")
+        room["players"] = [pid for pid in room["players"] if pid != user_id]
+        room["player_map"].pop(user_id, None)
+        if not room["players"]:
+            self.rooms.pop(group_id, None)
+            self._save()
+            yield event.plain_result(f"{name} 退出了房间，房间已自动解散。")
+            return
+
+        if str(room.get("owner_id")) == user_id:
+            room["owner_id"] = room["players"][0]
+            self._save()
+            yield event.plain_result(
+                f"{name} 退出了房间。\n房主已转移给：{self._player_name(room, room['owner_id'])}"
+            )
+            return
+
+        self._save()
+        yield event.plain_result(f"{name} 退出了房间。当前人数：{len(room['players'])}")
+
     @filter.command("轮盘开始", alias={"开始轮盘", "drstart"})
     async def start_room(self, event: AstrMessageEvent):
         group_id, error = self._group_id_or_reply(event)
@@ -638,9 +724,7 @@ class RoulettePlugin(Star):
             yield event.plain_result(f"当前配置最多支持 {max_players} 名玩家。")
             return
 
-        profile = self._player_profile(count)
-        if self._is_iseikai(room) and count >= 5:
-            profile["item_start_round"] = 1
+        profile = self._isekai_player_profile(count) if self._is_iseikai(room) else self._player_profile(count)
         room["rules"] = profile
         for player in room["player_map"].values():
             player["hp"] = profile["hp"]
@@ -666,12 +750,19 @@ class RoulettePlugin(Star):
             f"游戏开始，共 {count} 名玩家。",
             f"模式：{'异界战争' if self._is_iseikai(room) else '普通'}",
             f"本局每人 {profile['hp']} 血，最多持有 {profile['max_items']} 个道具。",
-            "玩家代号：" + "，".join(
-                f"{self._player_name(room, pid)}={self._short_name(room['player_map'][pid]['name'])}"
-                for pid in room["players"]
-            ),
-            "行动顺序：" + " -> ".join(self._player_name(room, pid) for pid in room["players"]),
+            "",
+            "玩家代号：",
         ]
+        lines.extend(
+            f"{self._player_name(room, pid)}={self._short_name(room['player_map'][pid]['name'])}"
+            for pid in room["players"]
+        )
+        lines.extend([
+            "",
+            "行动顺序：",
+            " -> ".join(self._player_name(room, pid) for pid in room["players"]),
+            "",
+        ])
         if self._is_iseikai(room) and count >= 5:
             lines.extend(self._grant_start_special_items(room))
         lines.extend(self._reload_chamber(room))
@@ -776,7 +867,7 @@ class RoulettePlugin(Star):
         if not room.get("chamber"):
             lines.extend(self._reload_chamber(room))
 
-        if target_id == shooter_id and not bullet and not pressure_bonus and shooter.get("alive"):
+        if target_id == shooter_id and not bullet and shooter.get("alive"):
             lines.append(f"{self._player_name(room, shooter_id)} 对自己打出空弹，继续行动。")
         else:
             self._apply_end_of_action_effects(group_id, room, shooter_id, lines)
@@ -878,7 +969,7 @@ class RoulettePlugin(Star):
         if not room.get("chamber"):
             lines.extend(self._reload_chamber(room))
 
-        if target_self and not bullet and not pressure_bonus and shooter.get("alive"):
+        if target_self and not bullet and shooter.get("alive"):
             lines.append(f"{self._player_name(room, shooter_id)} 对自己打出空弹，继续行动。")
         else:
             self._apply_end_of_action_effects(group_id, room, shooter_id, lines)
@@ -939,8 +1030,6 @@ class RoulettePlugin(Star):
             lines.append(f"{self._player_name(room, user_id)} 选择梭哈 all，对自己连续开枪。")
         elif requested_shots is not None:
             max_shots = min(requested_shots, remaining_in_chamber)
-            if requested_shots > remaining_in_chamber:
-                lines.append("输入数量超过当前弹仓剩余，按当前弹仓剩余处理。")
             lines.append(f"{self._player_name(room, user_id)} 选择梭哈 {requested_shots}，对自己连续开枪。")
         else:
             yield event.plain_result("请输入 /梭哈 数量 或 /梭哈 all。")
@@ -968,7 +1057,6 @@ class RoulettePlugin(Star):
         blanks = 0
         shot_index = 0
         hit_live = False
-        pressure_backfire = False
 
         while shot_index < max_shots and room.get("chamber") and shooter.get("alive"):
             bullet = room["chamber"].pop(0)
@@ -976,10 +1064,8 @@ class RoulettePlugin(Star):
             if not bullet:
                 blanks += 1
                 if shot_index == 1 and pressure_ready:
-                    pressure_backfire = True
                     lines.append("加压弹簧炸膛。")
                     self._apply_damage_to_player(group_id, room, user_id, 1, lines, reason="被炸膛反噬")
-                    break
                 continue
 
             hit_live = True
@@ -1005,15 +1091,21 @@ class RoulettePlugin(Star):
             yield self._lines_result(event, lines)
             return
 
-        if hit_live or pressure_backfire:
-            self._apply_end_of_action_effects(group_id, room, user_id, lines)
-            finish_lines = self._finish_if_needed(group_id, room)
-            if finish_lines:
-                lines.extend(finish_lines)
-                self._save()
-                yield self._lines_result(event, lines)
-                return
-            lines.extend(self._advance_turn(room))
+        chamber_emptied = not room.get("chamber")
+        if hit_live or chamber_emptied:
+            if chamber_emptied and not hit_live:
+                lines.append("弹仓已清空，进入下一轮。")
+                lines.extend(self._reload_chamber(room))
+                lines.append(f"{self._player_name(room, user_id)} 梭哈未中实弹，继续行动。")
+            else:
+                self._apply_end_of_action_effects(group_id, room, user_id, lines)
+                finish_lines = self._finish_if_needed(group_id, room)
+                if finish_lines:
+                    lines.extend(finish_lines)
+                    self._save()
+                    yield self._lines_result(event, lines)
+                    return
+                lines.extend(self._advance_turn(room))
         else:
             lines.append(f"{self._player_name(room, user_id)} 梭哈未中实弹，继续行动。")
 
@@ -1641,10 +1733,11 @@ class RoulettePlugin(Star):
     @filter.command("轮盘帮助", alias={"轮盘帮助", "drhelp"})
     async def help(self, event: AstrMessageEvent):
         text = (
-            "简单的轮盘赌 v0.3.1\n"
+            "简单的轮盘赌 v0.3.2\n"
             "指令：\n"
             "/轮盘创建 - 创建房间\n"
             "/轮盘创建 异界战争 - 创建异界战争模式\n"
+            "/退出房间 - 游戏开始前退出房间\n"
             "/轮盘加入 - 加入房间\n"
             "/轮盘开始 - 开始游戏\n"
             "/开自己 - 对自己开枪\n"
