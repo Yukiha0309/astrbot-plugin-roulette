@@ -24,7 +24,7 @@
     "default": 6,
     "slider": {
       "min": 2,
-      "max": 12,
+      "max": 17,
       "step": 1
     }
   },
@@ -45,21 +45,175 @@
       "step": 1
     }
   },
-  "jiuhu_event_enabled": {
-    "type": "bool",
-    "description": "酒狐事件开关",
-    "hint": "仅异界战争模式生效。",
-    "default": true
-  },
-  "jiuhu_event_chance": {
+  "normal_2_hp": {
     "type": "int",
-    "description": "酒狐事件概率",
-    "hint": "每个弹仓轮开始时触发酒狐事件的概率，仅异界战争模式生效。推荐 30。",
-    "default": 30,
+    "description": "普通 2 人局：初始血量",
+    "default": 5,
+    "slider": {
+      "min": 1,
+      "max": 10,
+      "step": 1
+    }
+  },
+  "normal_2_item_start_round": {
+    "type": "int",
+    "description": "普通 2 人局：第几轮开始发道具",
+    "default": 3,
+    "slider": {
+      "min": 1,
+      "max": 10,
+      "step": 1
+    }
+  },
+  "normal_2_item_count": {
+    "type": "string",
+    "description": "普通 2 人局：每次发放道具数量",
+    "hint": "可填固定值 3，也可填范围 1-3。",
+    "default": "2"
+  },
+  "normal_2_max_items": {
+    "type": "int",
+    "description": "普通 2 人局：背包上限",
+    "default": 6,
     "slider": {
       "min": 0,
-      "max": 100,
-      "step": 5
+      "max": 12,
+      "step": 1
+    }
+  },
+  "normal_2_early_rounds": {
+    "type": "int",
+    "description": "普通 2 人局：前几轮限制子弹数",
+    "hint": "填 0 表示不限制。",
+    "default": 2,
+    "slider": {
+      "min": 0,
+      "max": 10,
+      "step": 1
+    }
+  },
+  "normal_2_early_max_bullets": {
+    "type": "int",
+    "description": "普通 2 人局：前期最多几发",
+    "default": 4,
+    "slider": {
+      "min": 3,
+      "max": 10,
+      "step": 1
+    }
+  },
+  "normal_3_4_hp": {
+    "type": "int",
+    "description": "普通 3-4 人局：初始血量",
+    "default": 3,
+    "slider": {
+      "min": 1,
+      "max": 10,
+      "step": 1
+    }
+  },
+  "normal_3_4_item_start_round": {
+    "type": "int",
+    "description": "普通 3-4 人局：第几轮开始发道具",
+    "default": 3,
+    "slider": {
+      "min": 1,
+      "max": 10,
+      "step": 1
+    }
+  },
+  "normal_3_4_item_count": {
+    "type": "string",
+    "description": "普通 3-4 人局：每次发放道具数量",
+    "hint": "可填固定值 3，也可填范围 1-3。",
+    "default": "2"
+  },
+  "normal_3_4_max_items": {
+    "type": "int",
+    "description": "普通 3-4 人局：背包上限",
+    "default": 4,
+    "slider": {
+      "min": 0,
+      "max": 12,
+      "step": 1
+    }
+  },
+  "normal_3_4_early_rounds": {
+    "type": "int",
+    "description": "普通 3-4 人局：前几轮限制子弹数",
+    "hint": "填 0 表示不限制。",
+    "default": 3,
+    "slider": {
+      "min": 0,
+      "max": 10,
+      "step": 1
+    }
+  },
+  "normal_3_4_early_max_bullets": {
+    "type": "int",
+    "description": "普通 3-4 人局：前期最多几发",
+    "default": 6,
+    "slider": {
+      "min": 3,
+      "max": 10,
+      "step": 1
+    }
+  },
+  "normal_5_plus_hp": {
+    "type": "int",
+    "description": "普通 5 人及以上：初始血量",
+    "default": 2,
+    "slider": {
+      "min": 1,
+      "max": 10,
+      "step": 1
+    }
+  },
+  "normal_5_plus_item_start_round": {
+    "type": "int",
+    "description": "普通 5 人及以上：第几轮开始发道具",
+    "default": 2,
+    "slider": {
+      "min": 1,
+      "max": 10,
+      "step": 1
+    }
+  },
+  "normal_5_plus_item_count": {
+    "type": "string",
+    "description": "普通 5 人及以上：每次发放道具数量",
+    "hint": "可填固定值 3，也可填范围 1-3。",
+    "default": "1"
+  },
+  "normal_5_plus_max_items": {
+    "type": "int",
+    "description": "普通 5 人及以上：背包上限",
+    "default": 3,
+    "slider": {
+      "min": 0,
+      "max": 12,
+      "step": 1
+    }
+  },
+  "normal_5_plus_early_rounds": {
+    "type": "int",
+    "description": "普通 5 人及以上：前几轮限制子弹数",
+    "hint": "填 0 表示不限制。",
+    "default": 0,
+    "slider": {
+      "min": 0,
+      "max": 10,
+      "step": 1
+    }
+  },
+  "normal_5_plus_early_max_bullets": {
+    "type": "int",
+    "description": "普通 5 人及以上：前期最多几发",
+    "default": 10,
+    "slider": {
+      "min": 3,
+      "max": 10,
+      "step": 1
     }
   }
 }

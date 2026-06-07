@@ -1,6 +1,6 @@
 name: astrbot_plugin_roulette
-desc: "群聊简单的轮盘赌，默认支持 2 到 6 人、弹仓轮、道具和房主处决挂机玩家。"
+desc: "群聊简单的轮盘赌插件，默认支持 2 到 6 人，可通过 WebUI 调整人数与规则。"
 display_name: 简单的轮盘赌
-version: v0.3.2
+version: v1.0.0
 author: 赤井梓
 repo: "https://github.com/Yukiha0309/astrbot-plugin-roulette"
